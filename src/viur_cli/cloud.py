@@ -446,8 +446,8 @@ def deploy(action, profile, name, ext, yes, skip_checks: bool, additional_args):
             from .local import do_checks
             if not do_checks(dev=False, profile=profile):
                 # --yes will not be implemented here because deploying security issues should be an explicit decission
-                if not click.confirm(f"The checks were not successful, do you want to continue?"):
-                    return
+                if not click.confirm("The checks were not successful, do you want to continue?"):
+                    raise click.Abort()
             else:
                 echo_info("\U00002714 No vulnerabilities found.")
 

@@ -290,6 +290,11 @@ def do_checks(dev=True, profile="default"):
                 click.echo()
 
     # --- npm / pnpm vulnerability check ---
+    if config is None:
+        # Outside a ViUR project (no project.json) there are no builds to audit.
+        echo_warning("No project.json found - skipping npm/pnpm audit")
+        return not has_vulnerabilities
+
     conf = config.get_profile(profile)
     builds = conf.get("builds", {})
     sources_folder = conf.get("sources_folder", "./sources")
@@ -340,12 +345,31 @@ def do_checks(dev=True, profile="default"):
                 continue
 
             metadata = npm_data["metadata"]
-            vuln_counts = metadata.get("vulnerabilities", {})
+            vuln_counts = metadata.get("vulnerabilities")
             severities = ("critical", "high", "moderate", "low", "info")
 
-            # npm reports a "total" and dependencies as {"total": n, ...};
-            # pnpm has no "total" and reports dependencies as a plain number.
-            total_npm_vulns = vuln_counts.get("total", sum(vuln_counts.get(k, 0) for k in severities))
+            # Both npm and pnpm report one count per severity; a report without
+            # them is incomplete and must not count as "no vulnerabilities".
+            if not isinstance(vuln_counts, dict) or not all(
+                isinstance(vuln_counts.get(k), int) for k in severities
+            ):
+                echo_error(f"{tool} audit for {build['name']!r} returned an incomplete report: {metadata!r:.500}")
+                has_vulnerabilities = True
+                continue
+
+            total_npm_vulns = sum(vuln_counts[k] for k in severities)
+
+            # Both exit non-zero when they find vulnerabilities; a non-zero exit
+            # with nothing found means the audit itself failed.
+            if npm_result.returncode != 0 and total_npm_vulns == 0:
+                echo_error(
+                    f"{tool} audit for {build['name']!r} failed (exit {npm_result.returncode}): "
+                    f"{(npm_result.stderr or npm_result.stdout)[:500]}"
+                )
+                has_vulnerabilities = True
+                continue
+
+            # npm reports dependencies as {"total": n, ...}, pnpm as a plain number.
             dependencies = metadata.get("dependencies", 0)
             if isinstance(dependencies, dict):
                 dependencies = dependencies.get("total", 0)
