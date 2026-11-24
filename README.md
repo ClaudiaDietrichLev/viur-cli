@@ -38,7 +38,7 @@ What comes with it:
   `dev-$(user)-$(ref)` are resolved at deploy time.
 - **A security gate.** `viur check` runs `pip-audit` over the Python
   environment and `npm audit` / `pnpm audit` over every npm/pnpm build; `viur cloud deploy app`
-  runs it first, then regenerates `deploy/requirements.txt`, then uploads.
+  runs it first against the deployed profile, then regenerates `deploy/requirements.txt`, then uploads.
 
 ## Requirements
 
@@ -49,7 +49,7 @@ What comes with it:
 | [`gcloud`](https://cloud.google.com/sdk) | `viur run` (login check) and everything under `viur cloud` |
 | `git` | `viur create` and the `$(ref)` placeholder |
 | `npm` | builds of `kind: npm` and their audit in `viur check` |
-| `pnpm` | builds of `kind: pnpm` and their audit in `viur check` |
+| `pnpm` | builds of `kind: pnpm` and their audit in `viur check`; the audit needs pnpm 11 or newer against the public npm registry |
 | [`app_server`](https://github.com/viur-framework/viur-app_server) | the local development server behind `viur run`; installed as a dependency of `viur-cli` |
 
 macOS and Linux. The CLI warns at start when `uv` is older than the version it
@@ -106,7 +106,7 @@ The reference is generated from the code and lives at
 |---|---|
 | `viur create <name>` | clone `viur-base` into `./<name>` and run its setup wizard |
 | `viur run [profile]` | start the app locally via `app_server` |
-| `viur check [--dev]` | audit Python and npm/pnpm dependencies for known vulnerabilities |
+| `viur check [--dev]` | audit Python and npm/pnpm dependencies for known vulnerabilities; exits with 1 on findings or when an npm/pnpm build could not be audited |
 | `viur build release [profile]` | run every entry of the profile's `builds` section in declaration order |
 | `viur build app <name>` | run a single build entry |
 | `viur build clean [name]` | drop build artifacts of one or all entries |

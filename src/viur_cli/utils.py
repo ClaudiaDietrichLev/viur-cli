@@ -15,9 +15,10 @@ def rmdir(dir):
     so a misconfigured ``project.json`` can't take out ``$HOME`` or
     similar. Missing directories are silently ignored.
     """
-    # Verify the dir is part of the current folder
-    dir = os.path.abspath(dir)
-    wdir = os.getcwd()
+    # Verify the dir is part of the current folder. realpath resolves
+    # symlinks, so a linked parent folder can't redirect the delete outside.
+    dir = os.path.realpath(dir)
+    wdir = os.path.realpath(os.getcwd())
     if wdir != os.path.commonpath((wdir, dir)):
         echo_fatal(f"Illegal path configuration, won't remove {dir!r}")
 

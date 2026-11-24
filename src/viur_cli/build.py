@@ -2,6 +2,7 @@
 
 import click
 import os
+import shlex
 from .conf import config
 from .cli import cli
 from . import utils
@@ -34,7 +35,7 @@ def _build(conf, name, build_cfg, additional_args):
             utils.system(
                 " && ".join(
                     (
-                        f'cd {os.path.join(conf["sources_folder"], build_cfg["source"])}',
+                        f'cd {shlex.quote(os.path.join(conf["sources_folder"], build_cfg["source"]))}',
                         f"{tool} install",
                         f'{tool} run {build_cfg["command"]}'
                     )
@@ -67,7 +68,7 @@ def _clean(conf, name, build_cfg):
     utils.echo_info(f"""- cleaning {build_cfg["kind"]} {name}""")
 
     match build_cfg["kind"]:
-        # for npm, drop the target folder and node_modules (npm)
+        # for npm/pnpm, drop the target folder and node_modules
         case "npm" | "pnpm":
             if target_dir := build_cfg.get("target"):
                 target_dir = os.path.join(conf["distribution_folder"], target_dir)

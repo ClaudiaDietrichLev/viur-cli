@@ -187,8 +187,11 @@ def env(profile):
 def check(dev):
     """Audit Python (pip-audit) and npm/pnpm (npm/pnpm audit) dependencies for known vulnerabilities."""
 
-    if do_checks(dev):
-        utils.echo_info("\U00002714 No vulnerabilities found.")
+    if not do_checks(dev):
+        # Non-zero exit so CI pipelines treat findings and audit failures as failed.
+        sys.exit(1)
+
+    utils.echo_info("\U00002714 No vulnerabilities found.")
 
 
 @contextlib.contextmanager
@@ -226,19 +229,22 @@ def _spinner(message):
         sys.stdout.flush()
 
 
-def do_checks(dev=True):
+def do_checks(dev=True, profile="default"):
     """Run Python (pip-audit) and npm/pnpm (npm/pnpm audit) vulnerability scans.
 
     Args:
         dev: Reserved for future filtering between dev/prod-only deps.
             Currently unused but kept on the signature for caller
             compatibility.
+        profile: Profile whose ``builds`` are audited, so a deploy checks
+            the builds of the profile it actually deploys.
 
     Returns:
         ``True`` when no vulnerabilities were found across either scan,
-        ``False`` if at least one was reported. Tool failures are printed
-        but do not flip the return value to ``False`` unless the failure
-        actually surfaces a vulnerability.
+        ``False`` if at least one was reported. For npm/pnpm builds a
+        missing tool or an unusable audit report also yields ``False``:
+        a build that could not be audited must not pass the deploy gate.
+        Python (pip-audit) tool failures are only printed.
     """
     has_vulnerabilities = False
 
@@ -284,7 +290,7 @@ def do_checks(dev=True):
                 click.echo()
 
     # --- npm / pnpm vulnerability check ---
-    conf = config.get_profile("default")
+    conf = config.get_profile(profile)
     builds = conf.get("builds", {})
     sources_folder = conf.get("sources_folder", "./sources")
 
@@ -306,9 +312,8 @@ def do_checks(dev=True):
     for build in npm_builds:
         tool = build["tool"]
         if not shutil.which(tool):
-            click.echo("\n\n" + "=" * 60)
-            click.echo(f"{tool} not found - skipping {tool} audit ({build['name']})")
-            click.echo("=" * 60)
+            echo_error(f"{tool} not found - cannot audit build {build['name']!r}")
+            has_vulnerabilities = True
             continue
 
         try:
@@ -324,7 +329,17 @@ def do_checks(dev=True):
 
             npm_data = json.loads(npm_result.stdout, strict=False)
 
-            metadata = npm_data.get("metadata", {})
+            # Registry errors, missing lockfiles etc. come back as JSON without
+            # "metadata" (often {"error": ...}) - treat as failed, not as clean.
+            if not isinstance(npm_data, dict) or "metadata" not in npm_data:
+                echo_error(
+                    f"{tool} audit for {build['name']!r} returned no report "
+                    f"(exit {npm_result.returncode}): {(npm_result.stdout or npm_result.stderr)[:500]}"
+                )
+                has_vulnerabilities = True
+                continue
+
+            metadata = npm_data["metadata"]
             vuln_counts = metadata.get("vulnerabilities", {})
             severities = ("critical", "high", "moderate", "low", "info")
 
@@ -354,14 +369,13 @@ def do_checks(dev=True):
             click.echo()
 
         except FileNotFoundError:
-            echo_warning(f"{tool} audit directory not found: {build['path']}")
+            echo_error(f"{tool} audit directory not found: {build['path']}")
+            has_vulnerabilities = True
         except json.JSONDecodeError as e:
-            echo_error(
-                f"Error parsing {tool} audit output for {build['name']}: {e}"
-            )
+            echo_error(f"Error parsing {tool} audit output for {build['name']}: {e}")
+            has_vulnerabilities = True
         except Exception as e:
-            echo_error(
-                f"Unexpected error during {tool} security check for {build['name']}: {e}"
-            )
+            echo_error(f"Unexpected error during {tool} security check for {build['name']}: {e}")
+            has_vulnerabilities = True
 
     return not has_vulnerabilities
